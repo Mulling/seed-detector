@@ -66,6 +66,6 @@ results.
 To build import the project in android-studio and go from there.
 
 **NOTE:** You must use the provided OpenCV sdk since it contains
-modifications thay may cause the program not to work.
+modifications thay may cause the program not to work otherwise.
 
 TODO: interface description

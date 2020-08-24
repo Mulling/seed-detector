@@ -1,0 +1,7 @@
+filterpy==1.4.5
+numba==0.48
+scikit-image==0.16.2
+scikit-learn==0.22.2.post1
+opencv-python==4.2.0.32
+numpy==1.18.1
+

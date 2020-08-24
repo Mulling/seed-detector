@@ -61,7 +61,7 @@ sensitive, and requires a manual calibration to obtain good
 results.
 
 ### [Android](android/ "Android Version")
-![suffering](images/gif.java "why")
+![java](images/java.gif "java")
 
 To build import the project in android-studio and go from there.
 

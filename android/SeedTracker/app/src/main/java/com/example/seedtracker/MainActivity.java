@@ -37,7 +37,6 @@ import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 
-import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -86,10 +85,18 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         resultsPopUp = new AlertDialog.Builder(this)
                 .setTitle("Results")
-                .setMessage("No results")
+                .setMessage("No results").setOnDismissListener(new DialogInterface.OnDismissListener() {
+                    @Override
+                    public void onDismiss(DialogInterface dialogInterface) {
+                        resultsPopUp.setMessage("No Results.");
+                        measurements.clear();
+                    }
+                })
                 .setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface dialog, int whichButton) {
+                        resultsPopUp.setMessage("No Results.");
                         Toast.makeText(MainActivity.this, "Resetting results.", Toast.LENGTH_SHORT).show();
+                        measurements.clear();
                     }
                 });
 
@@ -393,6 +400,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         }
     }
 
+    @SuppressLint("DefaultLocale")
     protected String calculateResults() {
         if (measurements.isEmpty()) {
             return "No results.";
@@ -404,7 +412,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         int dub = 0;
         int fault = 0;
         int valid = 0;
-        double averageDist = 0;
+        double averageDist;
         double distanceSum = 0;
 
         ArrayList<Integer> validMeasurements = new ArrayList<>();
@@ -436,7 +444,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         sigma = Math.sqrt(sigma / (valid - 1));
         double CV = 100 * sigma / averageDist;
-        return String.format("Number of measurements = %d\nDoubles = %.2f %%\nFaults = %.2f %%\nC.V = %.2f %%", valid, (float)(dub / valid) * 100.0, (float)(fault / valid) * 100, (float)CV);
+        return String.format("Number of measurements = %d\nDoubles = %.2f %%\nFaults = %.2f %%\nC.V = %.2f %%\nAverage distance = %.2fcm", valid, (float)(dub / valid) * 100.0, (float)(fault / valid) * 100, (float)CV, (float)averageDist / Config.pixelSize);
     }
 
     protected void drawTracked(Mat img, ArrayList<Pair<Rect, Integer>> bBoxes){
@@ -500,7 +508,6 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 new Scalar(0, 255, 0, 255), 1);
 
     }
-
 
     protected ArrayList<Rect> processFrame(Mat img, int kernel, Scalar hsvLower, Scalar hsvUpper){
         ArrayList<MatOfPoint> contour = new ArrayList<>();

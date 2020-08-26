@@ -472,6 +472,10 @@ def calculate_results(measures, conf):
 
     average_dist = distance_sum / valid_measurments
 
+    if valid_measurments is 1:
+        print("not enough measurements")
+        return
+
     print('numbers of measurments: ', valid_measurments)
     print('prorcentage of doubles: ',
           (doubles / valid_measurments) * 100.0, '%')

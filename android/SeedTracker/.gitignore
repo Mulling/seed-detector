@@ -12,5 +12,4 @@
 /captures
 .externalNativeBuild
 .cxx
-
-
+/OpenCV-android-sdk/sdk/build

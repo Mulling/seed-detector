@@ -472,7 +472,7 @@ def calculate_results(measures, conf):
 
     average_dist = distance_sum / valid_measurments
 
-    if valid_measurments is 1:
+    if valid_measurments == 1:
         print("not enough measurements")
         return
 
@@ -488,7 +488,7 @@ def calculate_results(measures, conf):
     msr -= average_dist
 
     print('distribution: ', round(100.0 * (np.sqrt(np.sum(np.square(msr))
-                                                   / valid_measurments)
+                                                   / valid_measurments - 1)
                                            / average_dist), 2), '%CV')
 
 

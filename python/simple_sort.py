@@ -92,7 +92,7 @@ class Tracker(object):
 
         self.id = Tracker.count
 
-        # print("tracker created with id: ", self.id)
+        # print(f"tracker created with id: {self.id}")
 
         Tracker.count += 1
 
@@ -164,6 +164,7 @@ class SimpleSort(object):
                     matched[:, 1] == t
                 )[0], 0], :][0]
                 if trk.hit > self.min_hits:
+                    # print(f"{det} associated with {trks[t]}")
                     ret.append(np.concatenate((det, [trk.id])).reshape(1, -1))
                 trk.update(det)
 
@@ -199,9 +200,10 @@ def associate(trackers, detections, max_dist=25):
     for d, det in enumerate(detections):
         for t, trk in enumerate(trackers):
             mat[d, t] = np.linalg.norm(
-                np.array([(det[0] + det[1]) / 2.0, (det[1] + det[2]) / 2.0]) -
-                np.array([(trk[0] + trk[1]) / 2.0, (trk[1] + trk[2]) / 2.0])
+                np.array([(det[0] + det[2]) / 2.0, (det[1] + det[3]) / 2.0]) -
+                np.array([(trk[0] + trk[2]) / 2.0, (trk[1] + trk[3]) / 2.0])
             )
+            # print(f"{d}:{t} = {mat[d, t]}")
 
     matched_indices = np.transpose(np.asarray(linear_sum_assignment(mat)))
 

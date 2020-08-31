@@ -120,7 +120,7 @@ class SimpleSort(object):
     def __init__(self, max_age=5, min_hits=5, max_dist=50):
         """
         'max_age' the maximum amount of frames a tracker can be alive
-        without a match. 'min_hits' the minium amount of frame for a
+        without a match. 'min_hits' the minium amount of frames for a
         tracker to become active.
 
         """

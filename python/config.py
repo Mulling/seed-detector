@@ -8,11 +8,11 @@ class Config:
     kernel = None
     scale = None
     # how many pixels for 1cm, defaults to 10
-    pixel_size = 10
+    pixel_size = 47
     # size of fault
-    fsize = 5
+    fsize = 568
     # size of double
-    dsize = 15
+    dsize = 190
     # NOTE: all of the calculation is done pixel wise, this is only
     # used to display the data in a more redable way.
 

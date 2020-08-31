@@ -29,13 +29,19 @@ def process_frame(frame, kernel_size, hsv_lower, hsv_upper):
     bounding box in the form [x1, y1, x2, y2].
     """
 
-    hsv = cv.cvtColor(frame, cv.COLOR_RGB2HSV)
+    hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
+
     hsv = cv.medianBlur(hsv, kernel_size)
     bimage = cv.inRange(hsv, hsv_lower, hsv_upper)
-
+    # bimage = cv.morphologyEx(bimage, cv.MORPH_OPEN,
+    #                          cv.getStructuringElement(cv.MORPH_ELLIPSE,
+    #                                                   (3, 3)))
+    bimage = cv.erode(bimage,
+                      cv.getStructuringElement(cv.MORPH_ELLIPSE, (3, 3)))
     cv.imshow('binary image', bimage)
 
-    contours, _ = cv.findContours(bimage, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
+    contours, _ = cv.findContours(bimage, cv.RETR_EXTERNAL,
+                                  cv.CHAIN_APPROX_SIMPLE)
 
     return [to_bounding_rec(c) for c in contours]
 
@@ -45,7 +51,6 @@ def rescale(x, y, factor):
     return (int(x / factor), int(y / factor))
 
 
-# TODO: also needs to store the distance
 def mark_dist(bboxes, frame, factor, conf, measur):
     """Draw on the frame the distace/arrow line between
     the center of each bounding and the next."""
@@ -56,16 +61,14 @@ def mark_dist(bboxes, frame, factor, conf, measur):
     for bbox in bboxes:
         if prev is not None:
             curr = (int(((bbox[0] + bbox[2]) / 2) / factor), prev[1])
-            # FIXME: this is computing the euclidian distance, should
-            # be the x or y component.
             dist = conf.distf(prev, curr)
 
             color = None
 
-            if dist > conf.dsize:
-                color = palette["red"]
-            elif dist < conf.fsize:
+            if dist < (conf.dsize / conf.pixel_size):
                 color = palette["blue"]
+            elif dist > (conf.fsize / conf.pixel_size):
+                color = palette["red"]
             else:
                 color = palette["green"]
 
@@ -81,7 +84,8 @@ def mark_dist(bboxes, frame, factor, conf, measur):
                        str(round(dist / conf.pixel_size, 1)) + 'cm',
                        prev, cv.FONT_HERSHEY_PLAIN, 1, palette['yellow'])
 
-        prev = rescale((bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2,
+        prev = rescale((bbox[0] + bbox[2]) / 2,
+                       (bbox[1] + bbox[3]) / 2,
                        factor)
         prev_id = bbox[4]
 
@@ -194,9 +198,9 @@ def calibrate_mode(image, conf):
         conf.dsize = x
 
     cv.createTrackbar("Fault size:\n", "calibration",
-                      conf.fsize, 100, fault_bar)
+                      conf.fsize, 1000, fault_bar)
     cv.createTrackbar("Double size:\n", "calibration",
-                      conf.dsize, 400, double_bar)
+                      conf.dsize, 1000, double_bar)
 
     # this will only use the first frame of the video
     # NOTE: could be useful to advance frames
@@ -379,7 +383,6 @@ def track_video(conf):
         ok, image = video.read()
         if not ok:
             # on the last frame this will cause the program to exit
-            # the results should be reported here
             break
 
         global calibrate
@@ -433,7 +436,7 @@ def track_video(conf):
 
         cv.imshow('main', image)
 
-        key = cv.waitKey(150) & 0xFF
+        key = cv.waitKey(1) & 0xFF
         if key == ord('q'):
             sys.exit(0)
         elif key == ord('p'):
@@ -466,9 +469,9 @@ def calculate_results(measures, conf):
             measurements.append(mean_dist)
             distance_sum += mean_dist
             if mean_dist < conf.dsize:
-                faults += 1
-            elif mean_dist > conf.fsize:
                 doubles += 1
+            elif mean_dist > conf.fsize:
+                faults += 1
 
     average_dist = distance_sum / valid_measurments
 

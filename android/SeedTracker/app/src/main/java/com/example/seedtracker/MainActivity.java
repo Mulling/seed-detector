@@ -9,6 +9,7 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.CancellationSignal;
+import android.util.Log;
 import android.util.Pair;
 import android.view.SurfaceView;
 import android.view.View;
@@ -223,15 +224,14 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {}
         });
-
-
-
+        
         idealNP.setOnValueChangedListener(new NumberPicker.OnValueChangeListener() {
             @Override
             public void onValueChange(NumberPicker numberPicker, int i, int i1) {
 //                HOOKS
-                int di = (int) round(i * 0.5);
-                int fi = (int) round(i * 1.5);
+                int v = numberPicker.getValue();
+                int di = round(v * 0.5f);
+                int fi = round(v * 1.5f);
 
                 doubleNP.setValue(di);
                 Config.dSize = di * Config.pixelSize;

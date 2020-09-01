@@ -9,9 +9,9 @@ import org.opencv.video.KalmanFilter;
 
 final public class Tracker {
 
-    static int count = 0;
-
     KalmanFilter kf;
+
+    static int count = 0;
 
     public int age;
     public int hit;
@@ -48,8 +48,8 @@ final public class Tracker {
                  0, 10,  0,  0,     0,     0,
                  0,  0, 10,  0,     0,     0,
                  0,  0,  0, 10,     0,     0,
-                 0,  0,  0,  0, 1000,     0,
-                 0,  0,  0,  0,     0,  1000
+                 0,  0,  0,  0, 10000,     0,
+                 0,  0,  0,  0,     0, 10000
         };
         noiseCovMat.put(0,0, nMat);
         kf.set_processNoiseCov(noiseCovMat);
@@ -103,11 +103,9 @@ final public class Tracker {
     public static void bBoxToArr(Rect bBox, @NotNull Mat dst){
 //        NOTE: this could be done better, but for now it will work
 //        double -> float
-        Point p1 = bBox.br();
-        Point p2 = bBox.tl();
 
-        float x = (float) (p1.x + (bBox.width / 2.0));
-        float y = (float) (p1.y + (bBox.height / 2.0));
+        float x = (float) (bBox.x + (bBox.width / 2.0));
+        float y = (float) (bBox.y + (bBox.height / 2.0));
         float[] aux = {x, y, (float) bBox.area(), (float)bBox.width / (float)bBox.height};
         dst.put(0,0, aux);
 //        Log.i("OpenCV::seedTracker", "bBoxToArr: " + bBox.toString() + " to ->" + dst.dump());

@@ -2,17 +2,20 @@ package com.example.seedtracker;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.app.Dialog;
 import android.content.DialogInterface;
 import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.CancellationSignal;
 import android.util.Pair;
-import android.view.MotionEvent;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.ImageButton;
+import android.widget.NumberPicker;
 import android.widget.SeekBar;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -22,7 +25,17 @@ import androidx.annotation.RequiresApi;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
+import com.skydoves.colorpickerview.ActionMode;
+import com.skydoves.colorpickerview.ColorEnvelope;
+import com.skydoves.colorpickerview.ColorPickerDialog;
+import com.skydoves.colorpickerview.ColorPickerView;
+import com.skydoves.colorpickerview.listeners.ColorEnvelopeListener;
+import com.skydoves.colorpickerview.listeners.ColorListener;
+
+import org.jetbrains.annotations.Contract;
+import org.jetbrains.annotations.NotNull;
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.CameraBridgeViewBase;
 import org.opencv.android.JavaCameraView;
@@ -43,18 +56,21 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
 
+import static java.lang.Math.floor;
 import static org.opencv.imgproc.Imgproc.CHAIN_APPROX_SIMPLE;
+import static org.opencv.imgproc.Imgproc.COLOR_RGB2HSV;
 import static org.opencv.imgproc.Imgproc.FONT_HERSHEY_PLAIN;
+import static org.opencv.imgproc.Imgproc.MORPH_ELLIPSE;
+import static org.opencv.imgproc.Imgproc.MORPH_OPEN;
+import static org.opencv.imgproc.Imgproc.RETR_EXTERNAL;
 import static org.opencv.imgproc.Imgproc.RETR_LIST;
+import static org.opencv.imgproc.Imgproc.getStructuringElement;
 import static org.opencv.imgproc.Imgproc.putText;
 
 public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener2 {
-
-    private TextView hsvLowerID;
-    private TextView hsvUpperID;
-
     private CameraBridgeViewBase cameraBridgeViewBase;
     private BaseLoaderCallback baseLoaderCallback;
+
     private Mat img;
     private Mat sImg;
     private Mat bin;
@@ -69,9 +85,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     private Map<Pair<Integer, Integer>, Pair<Integer, Integer>> measurements = new HashMap<>();
 
-    private SimpleSort ss = new SimpleSort(3, 5, 25);
-
-    private AlertDialog.Builder resultsPopUp;
+    private SimpleSort ss = new SimpleSort(3, 5, Config.max_dist);
 
     @SuppressLint("SetTextI18n")
     @Override
@@ -79,31 +93,53 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
-
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        ActivityCompat.requestPermissions(MainActivity.this, new String[] {Manifest.permission.CAMERA}, 1);
 
-        hsvLowerID = findViewById(R.id.hsvLowerID);
-        hsvUpperID = findViewById(R.id.hsvUpperID);
+        cameraBridgeViewBase = (JavaCameraView)findViewById(R.id.camView);
+        cameraBridgeViewBase.setVisibility(SurfaceView.VISIBLE);
+        cameraBridgeViewBase.setCameraPermissionGranted();
+        cameraBridgeViewBase.setCvCameraViewListener(this);
 
-        resultsPopUp = new AlertDialog.Builder(this)
+        baseLoaderCallback = new BaseLoaderCallback(this) {
+            @Override
+            public void onManagerConnected(int status) {
+                super.onManagerConnected(status);
+                if (status == LoaderCallbackInterface.SUCCESS) {
+                    cameraBridgeViewBase.enableView();
+                } else {
+                    super.onManagerConnected(status);
+                }
+            }
+        };
+
+        final AlertDialog.Builder resultsPopUp = new AlertDialog.Builder(this)
                 .setTitle("Results")
                 .setMessage("No results").setOnDismissListener(new DialogInterface.OnDismissListener() {
                     @Override
                     public void onDismiss(DialogInterface dialogInterface) {
-                        resultsPopUp.setMessage("No Results.");
                         measurements.clear();
                     }
                 })
                 .setPositiveButton(android.R.string.yes, new DialogInterface.OnClickListener() {
                     public void onClick(DialogInterface dialog, int whichButton) {
-                        resultsPopUp.setMessage("No Results.");
-                        Toast.makeText(MainActivity.this, "Resetting results.", Toast.LENGTH_SHORT).show();
                         measurements.clear();
                     }
                 });
 
-        hsvLowerID.setText("Low(H:" +  Config.hsvLower.val[0] + " S:" + Config.hsvLower.val[1] + " V:" + Config.hsvLower.val[2] + ")");
-        hsvUpperID.setText("Up(H:" +  Config.hsvUpper.val[0] + " S:" + Config.hsvUpper.val[1] + " V:" + Config.hsvUpper.val[2] + ")");
+        final Dialog colorCalDialog = new Dialog(MainActivity.this);
+        colorCalDialog.setContentView(R.layout.color_dialog);
+
+        final Dialog distanceDialog = new Dialog(MainActivity.this);
+        distanceDialog.setContentView(R.layout.distance_dialog);
+
+        Button distanceButton = findViewById(R.id.distanceButton);
+        distanceButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                distanceDialog.show();
+            }
+        });
 
         Button startButton = findViewById(R.id.startButton);
         startButton.setOnClickListener(new View.OnClickListener() {
@@ -136,121 +172,37 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             }
         });
 
-        SeekBar hLowerSeekBar = findViewById(R.id.hLower);
-        hLowerSeekBar.setProgress((int) Config.hsvLower.val[0]);
-        hLowerSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @SuppressLint("SetTextI18n")
+        ImageButton colorCalButton = findViewById(R.id.colCal);
+        colorCalButton.setOnClickListener(new View.OnClickListener() {
             @Override
-            public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
-                Config.hsvLower.val[0] = i;
-                hsvLowerID.setText("Low(H:" +  Config.hsvLower.val[0] + " S:" + Config.hsvLower.val[1] + " V:" + Config.hsvLower.val[2] + ")");
+            public void onClick(View view) {
+                colorCalDialog.show();
             }
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {}
         });
 
-        SeekBar sLowerSeekBar = findViewById(R.id.sLower);
-        sLowerSeekBar.setProgress((int) Config.hsvLower.val[1]);
-        sLowerSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @SuppressLint("SetTextI18n")
+        NumberPicker.Formatter formatter = new NumberPicker.Formatter() {
+            @NotNull
+            @Contract(pure = true)
             @Override
-            public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
-                Config.hsvLower.val[1] = i;
-                hsvLowerID.setText("Low(H:" +  Config.hsvLower.val[0] + " S:" + Config.hsvLower.val[1] + " V:" + Config.hsvLower.val[2] + ")");
+            public String format(int i) {
+                return i+"cm";
             }
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {}
-        });
+        };
 
-        SeekBar vLowerSeekBar = findViewById(R.id.vLower);
-        vLowerSeekBar.setProgress((int) Config.hsvLower.val[2]);
-        vLowerSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @SuppressLint("SetTextI18n")
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
-                Config.hsvLower.val[2] = i;
-                hsvLowerID.setText("Low(H:" +  Config.hsvLower.val[0] + " S:" + Config.hsvLower.val[1] + " V:" + Config.hsvLower.val[2] + ")");
-            }
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {}
-        });
+        final NumberPicker idealNP = distanceDialog.findViewById(R.id.idealDistance);
+        idealNP.setFormatter(formatter);
+        idealNP.setMaxValue(50);
+        idealNP.setMinValue(0);
 
-        SeekBar hUpperSeekBar = findViewById(R.id.hUpper);
-        hUpperSeekBar.setProgress((int) Config.hsvUpper.val[0]);
-        hUpperSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @SuppressLint("SetTextI18n")
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
-                Config.hsvUpper.val[0] = i;
-                hsvUpperID.setText("Up(H:" +  Config.hsvUpper.val[0] + " S:" + Config.hsvUpper.val[1] + " V:" + Config.hsvUpper.val[2] + ")");
-            }
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {}
-        });
+        final NumberPicker faultNP = distanceDialog.findViewById(R.id.faultDistance);
+        faultNP.setFormatter(formatter);
+        faultNP.setMaxValue(75);
+        faultNP.setMinValue(0);
 
-        SeekBar sUpperSeekBar = findViewById(R.id.sUpper);
-        sUpperSeekBar.setProgress((int) Config.hsvUpper.val[1]);
-        sUpperSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @SuppressLint("SetTextI18n")
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
-                Config.hsvUpper.val[1] = i;
-                hsvUpperID.setText("Up(H:" +  Config.hsvUpper.val[0] + " S:" + Config.hsvUpper.val[1] + " V:" + Config.hsvUpper.val[2] + ")");
-            }
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {}
-        });
-
-        SeekBar vUpperSeekBar = findViewById(R.id.vUpper);
-        vUpperSeekBar.setProgress((int) Config.hsvUpper.val[2]);
-        vUpperSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @SuppressLint("SetTextI18n")
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
-                Config.hsvUpper.val[2] = i;
-                hsvUpperID.setText("Up(H:" +  Config.hsvUpper.val[0] + " S:" + Config.hsvUpper.val[1] + " V:" + Config.hsvUpper.val[2] + ")");
-            }
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {}
-        });
-
-        SeekBar doubleSeekBar = findViewById(R.id.douleSize);
-        doubleSeekBar.setProgress(Config.dSize);
-        doubleSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
-                Config.dSize = i;
-            }
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {}
-        });
-
-        SeekBar faultSeekBar = findViewById(R.id.faultSize);
-        faultSeekBar.setProgress(Config.fSize);
-        faultSeekBar.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
-            @Override
-            public void onProgressChanged(SeekBar seekBar, int i, boolean b) {
-                Config.fSize = i;
-            }
-            @Override
-            public void onStartTrackingTouch(SeekBar seekBar) {}
-            @Override
-            public void onStopTrackingTouch(SeekBar seekBar) {}
-        });
+        final NumberPicker doubleNP = distanceDialog.findViewById(R.id.doubleDistance);
+        doubleNP.setFormatter(formatter);
+        doubleNP.setMaxValue(25);
+        doubleNP.setMinValue(0);
 
         SeekBar centimeterBar = findViewById(R.id.centimeter);
         centimeterBar.setProgress(Config.pixelSize);
@@ -262,6 +214,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 } else {
                     Config.pixelSize = i;
                 }
+                Config.dSize = doubleNP.getValue() * Config.pixelSize;
+                Config.fSize = faultNP.getValue() * Config.pixelSize;
             }
             @Override
             public void onStartTrackingTouch(SeekBar seekBar) {}
@@ -269,47 +223,142 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             public void onStopTrackingTouch(SeekBar seekBar) {}
         });
 
-//        if(OpenCVLoader.initDebug()){
-//            Toast.makeText(getApplicationContext(), "OpenCV loaded.", Toast.LENGTH_SHORT).show();
-//        } else {
-//            Toast.makeText(getApplicationContext(), "OpenCV failed to load.", Toast.LENGTH_SHORT).show();
-//        }
 
-        ActivityCompat.requestPermissions(MainActivity.this, new String[] {Manifest.permission.CAMERA}, 1);
 
-        cameraBridgeViewBase = (JavaCameraView)findViewById(R.id.camView);
-        cameraBridgeViewBase.setVisibility(SurfaceView.VISIBLE);
-        cameraBridgeViewBase.setCameraPermissionGranted();
-        cameraBridgeViewBase.setCvCameraViewListener(this);
-        cameraBridgeViewBase.setOnTouchListener(new View.OnTouchListener() {
-            @SuppressLint("ClickableViewAccessibility")
+        idealNP.setOnValueChangedListener(new NumberPicker.OnValueChangeListener() {
             @Override
-            public boolean onTouch(View view, MotionEvent motionEvent) {
-                if(!mode) {
-                    findViewById(R.id.toolBar).setVisibility(View.GONE);
-                    findViewById(R.id.buttonPanel).setVisibility(View.VISIBLE);
-                    Toast.makeText(getApplicationContext(), "Record", Toast.LENGTH_SHORT).show();
-                } else {
-                    findViewById((R.id.toolBar)).setVisibility(View.VISIBLE);
-                    findViewById(R.id.buttonPanel).setVisibility(View.GONE);
-                    Toast.makeText(getApplicationContext(), "Settings", Toast.LENGTH_SHORT).show();
-                }
-                mode = !mode;
-                return false;
+            public void onValueChange(NumberPicker numberPicker, int i, int i1) {
+//                HOOKS
+                doubleNP.setValue((int) (floor(i * 0.5)));
+                Config.dSize = i * Config.pixelSize;
+                faultNP.setValue((int) (floor(i * 1.5)));
+                Config.fSize = i * Config.pixelSize;
             }
         });
 
-        baseLoaderCallback = new BaseLoaderCallback(this) {
+        doubleNP.setOnValueChangedListener(new NumberPicker.OnValueChangeListener() {
             @Override
-            public void onManagerConnected(int status) {
-                super.onManagerConnected(status);
-                if (status == LoaderCallbackInterface.SUCCESS) {
-                    cameraBridgeViewBase.enableView();
-                } else {
-                    super.onManagerConnected(status);
-                }
+            public void onValueChange(NumberPicker numberPicker, int i, int i1) {
+                Config.dSize = i * Config.pixelSize;
             }
-        };
+        });
+
+        faultNP.setOnValueChangedListener(new NumberPicker.OnValueChangeListener() {
+            @Override
+            public void onValueChange(NumberPicker numberPicker, int i, int i1) {
+                Config.fSize = i * Config.pixelSize;
+            }
+        });
+
+        final NumberPicker lowH = colorCalDialog.findViewById(R.id.lowH);
+        lowH.setMinValue(0); lowH.setMaxValue(180);
+        lowH.setValue((int)Config.hsvLower.val[0]);
+        lowH.setOnValueChangedListener(new NumberPicker.OnValueChangeListener() {
+            @Override
+            public void onValueChange(NumberPicker numberPicker, int i, int i1) {
+                Config.hsvLower.val[0] = (float)i;
+            }
+        });
+
+        final NumberPicker lowS = colorCalDialog.findViewById(R.id.lowS);
+        lowS.setMaxValue(0); lowS.setMaxValue(255);
+        lowS.setValue((int)Config.hsvLower.val[1]);
+        lowS.setOnValueChangedListener(new NumberPicker.OnValueChangeListener() {
+            @Override
+            public void onValueChange(NumberPicker numberPicker, int i, int i1) {
+                Config.hsvLower.val[1] = (float)i;
+            }
+        });
+
+        final NumberPicker lowV = colorCalDialog.findViewById(R.id.lowV);
+        lowV.setMinValue(0); lowV.setMaxValue(255);
+        lowV.setValue((int)Config.hsvLower.val[2]);
+        lowV.setOnValueChangedListener(new NumberPicker.OnValueChangeListener() {
+            @Override
+            public void onValueChange(NumberPicker numberPicker, int i, int i1) {
+                Config.hsvLower.val[2] = (float)i;
+            }
+        });
+
+        final NumberPicker upH = colorCalDialog.findViewById(R.id.upH);
+        upH.setMinValue(0); upH.setMaxValue(180);
+        upH.setValue((int)Config.hsvUpper.val[0]);
+        upH.setOnValueChangedListener(new NumberPicker.OnValueChangeListener() {
+            @Override
+            public void onValueChange(NumberPicker numberPicker, int i, int i1) {
+                Config.hsvUpper.val[0] = (float)i;
+            }
+        });
+
+        final NumberPicker upS = colorCalDialog.findViewById(R.id.upS);
+        upS.setMinValue(0); upS.setMaxValue(255);
+        upS.setValue((int)Config.hsvUpper.val[1]);
+        upS.setOnValueChangedListener(new NumberPicker.OnValueChangeListener() {
+            @Override
+            public void onValueChange(NumberPicker numberPicker, int i, int i1) {
+                Config.hsvUpper.val[1] = (float)i;
+            }
+        });
+
+        final NumberPicker upV = colorCalDialog.findViewById(R.id.upV);
+        upV.setMinValue(0); upV.setMaxValue(255);
+        upV.setValue((int)Config.hsvUpper.val[2]);
+        upV.setOnValueChangedListener(new NumberPicker.OnValueChangeListener() {
+            @Override
+            public void onValueChange(NumberPicker numberPicker, int i, int i1) {
+                Config.hsvUpper.val[2] = (float)i;
+            }
+        });
+
+        final AlertDialog colorPicker = new ColorPickerDialog.Builder(this)
+                .setTitle("Seed Color")
+                .setPreferenceName("MyColorPickerDialog")
+                .setPositiveButton("OK",
+                        new ColorEnvelopeListener() {
+                            @Override
+                            public void onColorSelected(ColorEnvelope envelope, boolean fromUser) {
+                                int [] color = envelope.getArgb();
+                                Mat col = new Mat(1, 1, CvType.CV_8UC3);
+                                Mat colHSV = new Mat();
+                                col.setTo(new Scalar(color[1], color[2], color[3]));
+
+                                Imgproc.cvtColor(col, colHSV, COLOR_RGB2HSV);
+
+                                Config.setHSVRange((int)colHSV.get(0,0)[0]);
+
+//                                FIXME: HOOKS, WHERE ARE THE HOOKS
+
+                                lowH.setValue((int)Config.hsvLower.val[0]);
+                                lowS.setValue((int)Config.hsvLower.val[1]);
+                                lowV.setValue((int)Config.hsvLower.val[2]);
+
+                                upH.setValue((int)Config.hsvUpper.val[0]);
+                                upS.setValue((int)Config.hsvUpper.val[1]);
+                                upV.setValue((int)Config.hsvUpper.val[2]);
+
+                                colHSV.release();
+                                col.release();
+                            }
+                        })
+                .setNegativeButton("Cancel",
+                        new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialogInterface, int i) {
+                                dialogInterface.dismiss();
+                            }
+                        })
+                .attachAlphaSlideBar(false)
+                .attachBrightnessSlideBar(true)
+                .setBottomSpace(12)
+                .create();
+
+        Button colorButton = findViewById(R.id.colorButton);
+        colorButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                colorPicker.show();
+            }
+        });
     }
 
     @Override
@@ -341,9 +390,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         ArrayList<Pair<Rect, Integer>> tRes = SimpleSort.update(bBoxes);
         drawTracked(img, tRes);
 
-        if(!mode){
-            drawSizeCalibrationLines(img);
-        }
+
         markDistance(img, tRes);
 
         return img;
@@ -396,7 +443,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         }
     }
 
-    protected void drawBBoxes(Mat img, ArrayList<Rect> bBoxes, Scalar color){
+    protected void drawBBoxes(Mat img, @NotNull ArrayList<Rect> bBoxes, Scalar color){
         for(Rect r : bBoxes){
             Imgproc.rectangle(img, rescale(r.br()), rescale(r.tl()), color, 1);
         }
@@ -446,10 +493,10 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         sigma = Math.sqrt(sigma / (valid - 1));
         double CV = 100 * sigma / averageDist;
-        return String.format("Number of measurements = %d\nDoubles = %.2f %%\nFaults = %.2f %%\nC.V = %.2f %%\nAverage distance = %.2fcm", valid, (float)(dub / valid) * 100.0, (float)(fault / valid) * 100, (float)CV, (float)averageDist / Config.pixelSize);
+        return String.format("Number of measurements = %d\nDoubles = %.2f %%\nFaults = %.2f %%\nC.V = %.2f %%\nAverage distance = %.2fcm", valid, (float)(dub / (float)valid) * 100.0, (float)(fault / (float)valid) * 100, (float)CV, (float)averageDist / Config.pixelSize);
     }
 
-    protected void drawTracked(Mat img, ArrayList<Pair<Rect, Integer>> bBoxes){
+    protected void drawTracked(Mat img, @NotNull ArrayList<Pair<Rect, Integer>> bBoxes){
         for(Pair<Rect, Integer> r : bBoxes){
             putText(img, r.second.toString(), rescale(r.first.br()), FONT_HERSHEY_PLAIN, 1, new Scalar(0, 255, 255, 255));
             Imgproc.drawMarker(img, rescale(new Point(r.first.x + (r.first.width / 2.0), r.first.y + (r.first.height / 2.0))), new Scalar(0, 255, 255, 255));
@@ -457,7 +504,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     }
 
     @RequiresApi(api = Build.VERSION_CODES.N)
-    protected void markDistance(Mat img, ArrayList<Pair<Rect, Integer>> bBoxes){
+    protected void markDistance(Mat img, @NotNull ArrayList<Pair<Rect, Integer>> bBoxes){
         bBoxes.sort(new Comparator<Pair<Rect, Integer>>() {
             @Override
             public int compare(Pair<Rect, Integer> p1, Pair<Rect, Integer> p2) {
@@ -488,27 +535,20 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                     }
                 }
                 Imgproc.putText(img, String.valueOf(Math.round((double)dist / Config.pixelSize)), new Point(prev.first.x + (dist / 2.0), prev.first.y - 10), FONT_HERSHEY_PLAIN, 1, new Scalar(0,255,128,255));
-                Imgproc.line(img, prev.first, new Point(prev.first.x + dist, prev.first.y), new Scalar(0, 128, 128, 255), 1);
+//                FIXME:
+                if(dist < Config.dSize){
+                    Imgproc.line(img, prev.first, new Point(prev.first.x + dist, prev.first.y), new Scalar(0, 0, 255, 255), 1);
+                }
+                else if (dist > Config.fSize){
+                    Imgproc.line(img, prev.first, new Point(prev.first.x + dist, prev.first.y), new Scalar(255, 0, 0, 255), 1);
+                }
+                else{
+                    Imgproc.line(img, prev.first, new Point(prev.first.x + dist, prev.first.y), new Scalar(0, 255, 0, 255), 1);
+                }
 
             }
             prev = curr;
         }
-    }
-
-    protected void drawSizeCalibrationLines(Mat img){
-        Imgproc.line(img,
-                new Point((img.cols() / 1.2), (img.rows() / 2.0) + 30),
-                new Point((img.cols() / 1.2) - Config.dSize, (img.rows() / 2.0) + 30),
-                new Scalar(0, 0, 255, 255), 1);
-        Imgproc.line(img,
-                new Point((img.cols() / 1.2), (img.rows() / 2.0) - 30),
-                new Point((img.cols() / 1.2) - Config.fSize, (img.rows() / 2.0) - 30),
-                new Scalar(255, 0, 0, 255), 1);
-        Imgproc.line(img,
-                new Point((img.cols() / 1.2), (img.rows() / 2.0)),
-                new Point((img.cols() / 1.2) - Config.pixelSize, (img.rows() / 2.0)),
-                new Scalar(0, 255, 0, 255), 1);
-
     }
 
     protected ArrayList<Rect> processFrame(Mat img, int kernel, Scalar hsvLower, Scalar hsvUpper){
@@ -519,9 +559,12 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         Imgproc.cvtColor(img, hsv, Imgproc.COLOR_RGB2HSV);
         Imgproc.medianBlur(hsv, hsvBlur, kernel);
+
         Core.inRange(hsvBlur, hsvLower, hsvUpper, bin);
 
-        Imgproc.findContours(bin, contour, h, RETR_LIST, CHAIN_APPROX_SIMPLE);
+//        Imgproc.morphologyEx(hsvBlur, hsvBlur, MORPH_OPEN, getStructuringElement(MORPH_ELLIPSE, new Size(3, 3)));
+        Imgproc.erode(bin, bin, getStructuringElement(MORPH_ELLIPSE, new Size(3, 3)));
+        Imgproc.findContours(bin, contour, h, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
 
         for(MatOfPoint m : contour){
             ret.add(Imgproc.boundingRect(m));

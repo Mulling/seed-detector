@@ -35,6 +35,8 @@ final public class SimpleSort {
         ArrayList<Pair<Rect, Integer>> ret = new ArrayList<>();
         rTrks.clear();
         toDel.clear();
+        matches.clear();
+        unmatchedDets.clear();
         for(int i = 0; i < trackers.size(); i++){
             rTrks.add(new Rect());
         }
@@ -43,7 +45,7 @@ final public class SimpleSort {
             Rect det = trackers.get(i).predict();
 //            Log.i("OpenCV::seedTracker", "Tracker prediction: " + det.toString());
             rTrks.set(i, det);
-            if(Double.isNaN(det.tl().x) || Double.isNaN(det.tl().y) || Double.isNaN(det.br().x) || Double.isNaN(det.br().y)){
+            if(Double.isNaN(det.x) || Double.isNaN(det.y) || Double.isNaN(det.height) || Double.isNaN(det.width)){
                 toDel.add(i);
             }
         }
@@ -53,8 +55,6 @@ final public class SimpleSort {
             rTrks.remove(i);
         }
 
-        matches.clear();
-        unmatchedDets.clear();
         associate(rTrks, dets, matches, unmatchedDets);
 
         for(int i = 0; i < trackers.size(); i++){
@@ -102,9 +102,8 @@ final public class SimpleSort {
             }
         }
 
-//        It would be col to use a native library here
-//        but i cannot get this shit to work
-//        https://developers.google.com/optimization/
+//        this is only a temporary solution
+//        FIXME: implement the associate and linear assignment in C++ and use the native runtime
         LinearAssignment la = new LinearAssignment(mat);
 //        the return is in the form {{d, t}...}
         int[][] matches = la.findOptimalAssignment();
@@ -118,13 +117,10 @@ final public class SimpleSort {
             if(id < dets.size() && it < trks.size()){
                 matchesList.add(m);
                 if(mat[id][it] < maxDist){
-                    Log.i("OpenCV::seedTracker", "Tracker: " + trackers.get(it).id + " matched " + " Detection: " + id + " distance = " + euclid(trks.get(it), dets.get(id)) );
+//                    Log.i("OpenCV::seedTracker", "Tracker: " + trackers.get(it).id + " matched " + " Detection: " + id + " distance = " + euclid(trks.get(it), dets.get(id)) );
                     dstMatches.add(new Pair<>(id, it));
                 }
             }
-//            else{
-//                Log.i("OpenCV::seedTracker", "Filter match: " + m[0] + " " + m[1]);
-//            }
         }
 
 //      add unmatched detections
@@ -143,16 +139,10 @@ final public class SimpleSort {
 
     private static float euclid(Rect p1, Rect p2){
 //        p1 and p2 are bounding boxes
-        float x1 = (float) p1.x + (p1.width / 2.0f);
-        float y1 = (float) p1.y + (p1.height / 2.0f);
-        float x2 = (float) p2.x + (p2.width / 2.0f);
-        float y2 = (float) p2.y + (p2.height / 2.0f);
+        float dx = p1.x + (p1.width / 2.0f) - p2.x + (p2.width / 2.0f);
+        float dy = p1.y + (p1.height / 2.0f) - p2.y + (p2.height / 2.0f);
 
-        return (float) Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2));
+        return (float) Math.sqrt(dx * dx + dy * dy);
     }
 
-    public static int getMaxAge() {
-//        TODO: implement
-        return maxAge;
-    }
 }

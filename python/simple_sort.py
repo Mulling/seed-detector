@@ -78,8 +78,11 @@ class Tracker(object):
             [0, 0, 0, 0, 1, 0],
             [0, 0, 0, 0, 0, 1]], np.float32)
 
-        self.kalman.processNoiseCov[4:, 4:] *= 1000
-        self.kalman.processNoiseCov *= 10
+        self.kalman.errorCovPost = np.eye(6, dtype=np.float32)
+        self.kalman.errorCovPost *= 0.1
+
+        self.kalman.processNoiseCov *= 1
+        self.kalman.processNoiseCov[4:, 4:] *= 10
 
         a = self.kalman.statePost
 

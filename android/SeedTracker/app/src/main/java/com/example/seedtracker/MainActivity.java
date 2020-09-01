@@ -57,6 +57,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static java.lang.Math.floor;
+import static java.lang.Math.round;
 import static org.opencv.imgproc.Imgproc.CHAIN_APPROX_SIMPLE;
 import static org.opencv.imgproc.Imgproc.COLOR_RGB2HSV;
 import static org.opencv.imgproc.Imgproc.FONT_HERSHEY_PLAIN;
@@ -229,10 +230,14 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             @Override
             public void onValueChange(NumberPicker numberPicker, int i, int i1) {
 //                HOOKS
-                doubleNP.setValue((int) (floor(i * 0.5)));
-                Config.dSize = i * Config.pixelSize;
-                faultNP.setValue((int) (floor(i * 1.5)));
-                Config.fSize = i * Config.pixelSize;
+                int di = (int) round(i * 0.5);
+                int fi = (int) round(i * 1.5);
+
+                doubleNP.setValue(di);
+                Config.dSize = di * Config.pixelSize;
+
+                faultNP.setValue(fi);
+                Config.fSize = fi * Config.pixelSize;
             }
         });
 

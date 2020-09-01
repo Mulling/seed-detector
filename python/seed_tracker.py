@@ -31,6 +31,7 @@ def process_frame(frame, kernel_size, hsv_lower, hsv_upper):
 
     hsv = cv.cvtColor(frame, cv.COLOR_BGR2HSV)
 
+    # TODO: test if a Gaussian blur is better here
     hsv = cv.medianBlur(hsv, kernel_size)
     bimage = cv.inRange(hsv, hsv_lower, hsv_upper)
     # bimage = cv.morphologyEx(bimage, cv.MORPH_OPEN,

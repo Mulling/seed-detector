@@ -94,11 +94,15 @@ final public class SimpleSort {
 
 //        the dimensions must be equal.
         float[][] mat = new float[dim][dim];
+        float[][] matAux = new float[dim][dim];
         for(float[] m : mat) Arrays.fill(m, 5000);
+        for(float[] m : matAux) Arrays.fill(m, 5000);
 
         for(int i = 0; i < dets.size(); i++){
             for(int j = 0; j < trks.size(); j++){
-                mat[i][j] = euclid(trks.get(j), dets.get(i));
+                float dist = euclid(trks.get(j), dets.get(i));
+                mat[i][j] = dist;
+                matAux[i][j] = dist;
             }
         }
 
@@ -108,15 +112,17 @@ final public class SimpleSort {
 //        the return is in the form {{d, t}...}
         int[][] matches = la.findOptimalAssignment();
 
+
 //        remove padding matches and
 //        filter detections with high distance
         ArrayList<int[]> matchesList = new ArrayList<>();
+
         for(int[] m : matches){
-            int id = m[0];
-            int it = m[1];
+            int id = m[1];
+            int it = m[0];
             if(id < dets.size() && it < trks.size()){
                 matchesList.add(m);
-                if(mat[id][it] < maxDist){
+                if(matAux[id][it] < maxDist){
                     Log.i("OpenCV::seedTracker", "Tracker: " + trackers.get(it).id + " matched " + " Detection: " + id + " distance = " + euclid(trks.get(it), dets.get(id)) );
                     dstMatches.add(new Pair<>(id, it));
                 }
@@ -127,14 +133,26 @@ final public class SimpleSort {
         for(int i = 0; i < dets.size(); i++){
             boolean found = false;
             for (int[] match : matchesList) {
-                if (i == match[0]) {
+                if (i == match[1]) {
                     found = true;
                     break;
                 }
             }
-            if(!found)
+            if(!found) {
                 unmatchedDets.add(i);
+            }
         }
+
+//        if(dstMatches.size() == 0 && dim != 0){
+//            Log.i("test", "Matches size: " + matches.length);
+//            for(int [] m : matches){
+//                Log.i("test", Arrays.toString(m));
+//            }
+//            Log.i("test", "Dumping association mat:");
+//            for(float[] i : mat){
+//                Log.i("test", Arrays.toString(i));
+//            }
+//        }
     }
 
     private static float euclid(Rect p1, Rect p2){

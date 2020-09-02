@@ -75,7 +75,7 @@ final public class SimpleSort {
 //        remove old trackers
         for(int i = trackers.size() - 1; i >= 0; i--){
             if(trackers.get(i).age > maxAge){
-//                Log.i("OpenCV::seedTracker", "Removed tracker with ID: " + trackers.get(i).id);
+                Log.i("OpenCV::seedTracker", "Removed tracker with ID: " + trackers.get(i).id);
                 trackers.remove(i);
             }
         }
@@ -117,7 +117,7 @@ final public class SimpleSort {
             if(id < dets.size() && it < trks.size()){
                 matchesList.add(m);
                 if(mat[id][it] < maxDist){
-//                    Log.i("OpenCV::seedTracker", "Tracker: " + trackers.get(it).id + " matched " + " Detection: " + id + " distance = " + euclid(trks.get(it), dets.get(id)) );
+                    Log.i("OpenCV::seedTracker", "Tracker: " + trackers.get(it).id + " matched " + " Detection: " + id + " distance = " + euclid(trks.get(it), dets.get(id)) );
                     dstMatches.add(new Pair<>(id, it));
                 }
             }
@@ -139,10 +139,9 @@ final public class SimpleSort {
 
     private static float euclid(Rect p1, Rect p2){
 //        p1 and p2 are bounding boxes
-        float dx = p1.x + (p1.width / 2.0f) - p2.x + (p2.width / 2.0f);
-        float dy = p1.y + (p1.height / 2.0f) - p2.y + (p2.height / 2.0f);
+        float dx = (p1.x + (p1.width / 2.0f)) - (p2.x + (p2.width / 2.0f));
+        float dy = (p1.y + (p1.height / 2.0f)) - (p2.y + (p2.height / 2.0f));
 
         return (float) Math.sqrt(dx * dx + dy * dy);
     }
-
 }

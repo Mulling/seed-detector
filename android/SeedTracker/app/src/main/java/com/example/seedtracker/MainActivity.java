@@ -486,8 +486,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 }
             }
         }
-        if (valid == 1) {
-            return "Not enough measurements.";
+        if (valid <= 1) {
+            return "Not enough valid measurements.";
         }
         averageDist = distanceSum / (double) valid;
 
@@ -498,7 +498,12 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         sigma = Math.sqrt(sigma / (valid - 1));
         double CV = 100 * sigma / averageDist;
-        return String.format("Number of measurements = %d\nDoubles = %.2f %%\nFaults = %.2f %%\nC.V = %.2f %%\nAverage distance = %.2fcm", valid, (float)(dub / (float)valid) * 100.0, (float)(fault / (float)valid) * 100, (float)CV, (float)averageDist / Config.pixelSize);
+        return String.format("Number of measurements = %d\nDoubles = %.2f %%\nFaults = %.2f %%\nC.V = %.2f %%\nAverage distance = %.2fcm",
+                valid,
+                (float)(dub / (float)valid) * 100.0,
+                (float)(fault / (float)valid) * 100,
+                (float)CV,
+                (float)averageDist / Config.pixelSize);
     }
 
     protected void drawTracked(Mat img, @NotNull ArrayList<Pair<Rect, Integer>> bBoxes){
@@ -550,7 +555,6 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 else{
                     Imgproc.line(img, prev.first, new Point(prev.first.x + dist, prev.first.y), new Scalar(0, 255, 0, 255), 1);
                 }
-
             }
             prev = curr;
         }

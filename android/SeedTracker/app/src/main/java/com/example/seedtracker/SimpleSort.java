@@ -33,17 +33,18 @@ final public class SimpleSort {
 
     public static ArrayList<Pair<Rect, Integer>> update(ArrayList<Rect> dets){
         ArrayList<Pair<Rect, Integer>> ret = new ArrayList<>();
+
         rTrks.clear();
         toDel.clear();
         matches.clear();
         unmatchedDets.clear();
+
         for(int i = 0; i < trackers.size(); i++){
             rTrks.add(new Rect());
         }
 
         for(int i = 0; i < trackers.size(); i++){
             Rect det = trackers.get(i).predict();
-//            Log.i("OpenCV::seedTracker", "Tracker prediction: " + det.toString());
             rTrks.set(i, det);
             if(Double.isNaN(det.x) || Double.isNaN(det.y) || Double.isNaN(det.height) || Double.isNaN(det.width)){
                 toDel.add(i);
@@ -123,7 +124,6 @@ final public class SimpleSort {
             if(id < dets.size() && it < trks.size()){
                 matchesList.add(m);
                 if(matAux[id][it] < maxDist){
-                    Log.i("OpenCV::seedTracker", "Tracker: " + trackers.get(it).id + " matched " + " Detection: " + id + " distance = " + euclid(trks.get(it), dets.get(id)) );
                     dstMatches.add(new Pair<>(id, it));
                 }
             }
@@ -142,17 +142,6 @@ final public class SimpleSort {
                 unmatchedDets.add(i);
             }
         }
-
-//        if(dstMatches.size() == 0 && dim != 0){
-//            Log.i("test", "Matches size: " + matches.length);
-//            for(int [] m : matches){
-//                Log.i("test", Arrays.toString(m));
-//            }
-//            Log.i("test", "Dumping association mat:");
-//            for(float[] i : mat){
-//                Log.i("test", Arrays.toString(i));
-//            }
-//        }
     }
 
     private static float euclid(Rect p1, Rect p2){

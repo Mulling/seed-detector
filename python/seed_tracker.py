@@ -7,12 +7,17 @@ import numpy as np
 import sys
 import time
 
-from sort import Sort
+# from sort import Sort
 from simple_sort import SimpleSort
+from simple_sort import use_centroid_model
 
 
 # if the tracker is in calibration mode
 calibrate = False
+
+# out = None
+# out_hsv = None
+# out_bin = None
 
 
 def to_bounding_rec(c):
@@ -34,17 +39,43 @@ def process_frame(frame, kernel_size, hsv_lower, hsv_upper):
     # TODO: test if a Gaussian blur is better here
     hsv = cv.medianBlur(hsv, kernel_size)
     bimage = cv.inRange(hsv, hsv_lower, hsv_upper)
-    # bimage = cv.morphologyEx(bimage, cv.MORPH_OPEN,
-    #                          cv.getStructuringElement(cv.MORPH_ELLIPSE,
-    #                                                   (3, 3)))
     bimage = cv.erode(bimage,
                       cv.getStructuringElement(cv.MORPH_ELLIPSE, (3, 3)))
-    cv.imshow('binary image', bimage)
+    # global out_hsv
+    # if out_hsv is None and not calibrate:
+    #     out_hsv = cv.VideoWriter('hsv.avi',
+    #                              cv.VideoWriter_fourcc(*'MJPG'),
+    #                              60.0, (hsv.shape[1], hsv.shape[0]))
+
+    # global out_bin
+    # if out_bin is None and not calibrate:
+
+    #     out_bin = cv.VideoWriter('bin.avi',
+    #                              cv.VideoWriter_fourcc(*'MJPG'),
+    #                              60.0, (bimage.shape[1], bimage.shape[0]))
+
+    # if not calibrate:
+    #     a = np.zeros((bimage.shape[0], bimage.shape[1], 3), dtype=np.uint8)
+    #     for i in range((bimage.shape[0] - 1)):
+    #         for j in range((bimage.shape[1] - 1)):
+    #             a[i, j, :] = bimage[i, j]
+
+    #     out_hsv.write(hsv)
+    #     out_bin.write(a)
+
+    # cv.imshow('binary image', bimage)
 
     contours, _ = cv.findContours(bimage, cv.RETR_EXTERNAL,
                                   cv.CHAIN_APPROX_SIMPLE)
+    if use_centroid_model:
+        ret = []
+        for c in contours:
+            x1, y1, x2, y2 = to_bounding_rec(c)
+            ret.append([((x1 + x2) / 2), ((y1 + y2) / 2)])
 
-    return [to_bounding_rec(c) for c in contours]
+        return ret
+    else:
+        return [to_bounding_rec(c) for c in contours]
 
 
 def rescale(x, y, factor):
@@ -61,52 +92,68 @@ def mark_dist(bboxes, frame, factor, conf, measur):
 
     for bbox in bboxes:
         if prev is not None:
-            curr = (int(((bbox[0] + bbox[2]) / 2) / factor), prev[1])
+            if use_centroid_model:
+                curr = (int(bbox[0] / factor), prev[1])
+            else:
+                curr = (int(((bbox[0] + bbox[2]) / 2) / factor), prev[1])
             dist = conf.distf(prev, curr)
 
             color = None
 
-            if dist < (conf.dsize / conf.pixel_size):
+            if dist < conf.dsize:
                 color = palette["blue"]
-            elif dist > (conf.fsize / conf.pixel_size):
+            elif dist > conf.fsize:
                 color = palette["red"]
             else:
                 color = palette["green"]
 
-            cv.arrowedLine(frame, prev, curr, color, 1)
+            cv.line(frame, prev, curr, color, 1)
 
-            if (bbox[4], prev_id) not in measur:
-                measur[(bbox[4], prev_id)] = np.array([dist, 1])
+            curr_id = bbox[2] if use_centroid_model else bbox[4]
+
+            if (curr_id, prev_id) not in measur:
+                measur[(curr_id, prev_id)] = np.array([dist, 1])
             else:
                 # NOTE: the distance here is kept in pixels
-                measur[(bbox[4], prev_id)] += [dist, 1]
+                measur[(curr_id, prev_id)] += [dist, 1]
 
-            cv.putText(frame, str(bbox[4]) + '' +
+            cv.putText(frame, str(curr_id) + ' ' +
                        str(round(dist / conf.pixel_size, 1)) + 'cm',
                        prev, cv.FONT_HERSHEY_PLAIN, 1, palette['yellow'])
 
-        prev = rescale((bbox[0] + bbox[2]) / 2,
-                       (bbox[1] + bbox[3]) / 2,
-                       factor)
-        prev_id = bbox[4]
+        if use_centroid_model:
+            prev = rescale(bbox[0], bbox[1], factor)
+            prev_id = bbox[2]
+        else:
+            prev = rescale((bbox[0] + bbox[2]) / 2,
+                           (bbox[1] + bbox[3]) / 2,
+                           factor)
+            prev_id = bbox[4]
 
 
-def draw_bboxes(image, bboxes, factor, color):
+def draw_bboxes(image, bboxes, factor, color, tracker=False):
     """
     Draw all the bounding boxes ('bboxes') into the 'image'. 'factor'
     is is how mutch the image is scaled.
 
     """
+    if use_centroid_model:
+        for c in bboxes:
+            if tracker:
+                cv.drawMarker(image, rescale(c[0], c[1], factor), color,
+                              cv.MARKER_CROSS)
+            else:
+                cv.circle(image, rescale(c[0], c[1], factor), 10, color)
+    else:
+        for bbox in bboxes:
+            p1 = rescale(bbox[0], bbox[1], factor)
+            p2 = rescale(bbox[2], bbox[3], factor)
+            cv.rectangle(image, p1, p2, color, 1)
 
-    for bbox in bboxes:
-        p1 = rescale(bbox[0], bbox[1], factor)
-        p2 = rescale(bbox[2], bbox[3], factor)
-        cv.rectangle(image, p1, p2, color, 1)
 
-
-def calibrate_mode(image, conf):
+def calibrate_mode(image, conf, use_camera=False, cam=None):
     """
-    TODO: doc
+    Calibrate the tracker settings.
     """
     # image that the user sees
     image_show = image.copy()
@@ -156,11 +203,11 @@ def calibrate_mode(image, conf):
                       conf.scale, 100, scale_bar)
 
     # kernel size calibraion
-    def kernel_bar(x):
-        conf.kernel = x if x & 1 != 0 else x + 1
+    # def kernel_bar(x):
+    #     conf.kernel = x if x & 1 != 0 else x + 1
 
-    cv.createTrackbar("Kernel:\n", "calibration",
-                      conf.kernel, 11, kernel_bar)
+    # cv.createTrackbar("Kernel:\n", "calibration",
+    #                   conf.kernel, 11, kernel_bar)
 
     # ROI(region of interest) calibraion
     def roi_up(x):
@@ -191,22 +238,36 @@ def calibrate_mode(image, conf):
     cv.createTrackbar("Pixel size (how many pixels per 1 cm):\n",
                       "calibration", conf.pixel_size, 100, pixel_size_bar)
 
+    def distance_bar(x):
+        conf.fsize = 1.5 * x * conf.pixel_size
+        conf.dsize = 0.5 * x * conf.pixel_size
+
+    cv.createTrackbar("ideal distance in cm:",
+                      "calibration", 10, 100, distance_bar)
+
     # fault and double calibration
-    def fault_bar(x):
-        conf.fsize = x
+    # def fault_bar(x):
+    #     conf.fsize = x
 
-    def double_bar(x):
-        conf.dsize = x
+    # def double_bar(x):
+    #     conf.dsize = x
 
-    cv.createTrackbar("Fault size:\n", "calibration",
-                      conf.fsize, 1000, fault_bar)
-    cv.createTrackbar("Double size:\n", "calibration",
-                      conf.dsize, 1000, double_bar)
+    # cv.createTrackbar("Fault size:\n", "calibration",
+    #                   conf.fsize, 1000, fault_bar)
+    # cv.createTrackbar("Double size:\n", "calibration",
+    #                   conf.dsize, 1000, double_bar)
 
     # this will only use the first frame of the video
     # NOTE: could be useful to advance frames
     bboxes = np.array([])
+    measur = {}
+    tracker = SimpleSort(max_dist=conf.max_dist)
+
     while(True):
+        if use_camera:
+            ok, image = cam.read()
+            image_show = image.copy()
+
         roi = np.array([image.shape[0], image.shape[0],
                         image.shape[1], image.shape[1]], dtype=np.int16)
 
@@ -227,6 +288,19 @@ def calibrate_mode(image, conf):
         draw_bboxes(cimage, bboxes, float(conf.scale / 100.0),
                     palette["yellow"])
 
+        if use_camera:
+            tracker_results = tracker.update(np.array(bboxes))
+            # sort from image going from left to right
+            # TODO: add sorting when going up and down
+            tracker_results = tracker_results[tracker_results[:, 0].argsort()]
+            print('tracker_results')
+            # bounding boxes for the tracker results
+            draw_bboxes(cimage, tracker_results, conf.scale / 100.0,
+                        palette["magenta"], True)
+
+            mark_dist(tracker_results, cimage,
+                      conf.scale / 100.0, conf, measur)
+
         # we copy the original frame to use for display
         image_show = image.copy()
         # this will copy the tracked image over the original image,
@@ -235,10 +309,6 @@ def calibrate_mode(image, conf):
         # draw the pixel size calibration
         cv.line(image_show, (20, 20), (20 + conf.pixel_size, 20),
                 palette["green"], 2)
-        cv.line(image_show, (20, 30), (20 + conf.fsize, 30),
-                palette["blue"], 2)
-        cv.line(image_show, (20, 40), (20 + conf.dsize, 40),
-                palette["red"], 2)
 
         # draw a rectangle to indicate the ROI
         cv.rectangle(image_show, (roi[2], roi[0]),
@@ -255,109 +325,8 @@ def calibrate_mode(image, conf):
     cv.destroyWindow("calibration")
 
 
-def track_video_sort(conf):
-    """TODO:"""
-
-    measur = {}
-    # ROI(region of interest)
-    roi = np.empty((4))
-
-    tracker = Sort()
-    video = cv.VideoCapture(conf.device_name)
-    tracker_counter = 1
-    # map count to object tag
-    tracker_map = {}
-
-    cv_scale_factor = (0, 0)
-
-    roi_change = True
-
-    fps = 0
-    fps_counter = 0
-
-    start_time = time.time()
-
-    while(video.isOpened()):
-        ok, image = video.read()
-        if not ok:
-            # on the last frame this will cause the programm to exit
-            # the results should be reported here
-            break
-
-        global calibrate
-
-        if calibrate:
-            calibrate_mode(image.copy(), conf)
-            calibrate = False
-
-        roi = np.array([image.shape[0], image.shape[0],
-                        image.shape[1], image.shape[1]], dtype=np.int16)
-
-        roi = (roi * conf.roi_factor).astype(np.int16)
-        image = image[roi[0]:roi[0]+roi[1], roi[2]:roi[2]+roi[3]]
-
-        if roi_change:
-            cv_scale_factor = (int(image.shape[1] * (conf.scale / 100.0)),
-                               int(image.shape[0] * (conf.scale / 100.0)))
-            roi_change = False
-
-        # scale the frame
-        scaled_frame = cv.resize(image, cv_scale_factor,
-                                 interpolation=cv.INTER_AREA)
-
-        bboxes = process_frame(scaled_frame, conf.kernel,
-                               conf.hsv_lower, conf.hsv_upper)
-
-        # bounding boxes of the detections
-        draw_bboxes(image, bboxes, float(conf.scale / 100.0),
-                    palette["yellow"])
-
-        tracker_results = tracker.update(np.array(bboxes))
-        # sort from image going from left to right
-        # TODO: add sorting when going up and down
-        tracker_results = tracker_results[tracker_results[:, 0].argsort()]
-
-        # sort does not return in sequence tag
-        # fix this by binding each tag to a count value
-        # tags must be sorted for this to work
-        for x1, y1, x2, y2, tag in tracker_results:
-            if tag not in tracker_map:
-                tracker_map[tag] = tracker_counter
-                tracker_counter += 1
-
-        # bounding boxes for the tracker results
-        draw_bboxes(image, tracker_results, conf.scale / 100.0,
-                    palette["magenta"])
-
-        mark_dist(tracker_results, image, conf.scale / 100.0, conf, measur)
-
-        fps_counter += 1
-        if (time.time() - start_time) > 0.250:
-            fps = fps_counter / (time.time() - start_time)
-            print('FPS: ', fps)
-            fps_counter = 0
-            start_time = time.time()
-
-        cv.putText(image, "FPS:" + str(int(fps)), (0, 15),
-                   cv.FONT_HERSHEY_PLAIN, 0.6, palette["white"])
-
-        cv.imshow('main', image)
-
-        key = cv.waitKey(50) & 0xFF
-        if key == ord('q'):
-            sys.exit(0)
-        elif key == ord('p'):
-            cv.waitKey(0)
-        elif key == ord('r'):
-            # TODO: report results and exit
-            pass
-
-    video.release()
-    cv.destroyAllWindows()
-
-
 def track_video(conf):
-    """TODO:"""
+    """Track the video using simple_sort"""
     # store the measurment results as a tupe of (T1, T2) -> (H, D)
     # where: T1 = the id of the first detection, T2 = id of the second
     # detection, H = the number of hits, D = the distance.  NOTE: the
@@ -382,6 +351,7 @@ def track_video(conf):
 
     while(video.isOpened()):
         ok, image = video.read()
+
         if not ok:
             # on the last frame this will cause the program to exit
             break
@@ -389,7 +359,7 @@ def track_video(conf):
         global calibrate
 
         if calibrate:
-            calibrate_mode(image.copy(), conf)
+            calibrate_mode(image.copy(), conf, True, video)
             calibrate = False
 
         roi = np.array([image.shape[0], image.shape[0],
@@ -422,7 +392,7 @@ def track_video(conf):
 
         # bounding boxes for the tracker results
         draw_bboxes(image, tracker_results, conf.scale / 100.0,
-                    palette["magenta"])
+                    palette["magenta"], True)
 
         mark_dist(tracker_results, image, conf.scale / 100.0, conf, measur)
 
@@ -434,6 +404,13 @@ def track_video(conf):
 
         cv.putText(image, "FPS:" + str(int(fps)), (0, 15),
                    cv.FONT_HERSHEY_PLAIN, 0.6, palette["white"])
+
+        # global out
+        # if out is None:
+        #     out = cv.VideoWriter('tracking.avi',
+        #                          cv.VideoWriter_fourcc(*'MJPG'),
+        #                          60.0, (image.shape[1], image.shape[0]))
+        # out.write(image)
 
         cv.imshow('main', image)
 
@@ -449,6 +426,10 @@ def track_video(conf):
     video.release()
     cv.destroyAllWindows()
     calculate_results(measur, conf)
+
+    # out.release()
+    # out_hsv.release()
+    # out_bin.release()
 
 
 def calculate_results(measures, conf):

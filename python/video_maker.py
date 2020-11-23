@@ -27,7 +27,7 @@ if __name__ == '__main__':
 
     img = np.zeros((500, 1000, 3), dtype=np.uint8)
 
-    out = cv.VideoWriter(file_name, cv.VideoWriter_fourcc('MJPG'),
+    out = cv.VideoWriter(file_name, cv.VideoWriter_fourcc(*'MJPG'),
                          60.0, (1000, 500))
 
     while(True):

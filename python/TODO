@@ -1,3 +1,4 @@
 - Report the results
 - Add a fast mode that does not report the live feed of the tracker, but only the results.
 - Add more command line arguments for hsv range, etc.
+- Update the python docs
